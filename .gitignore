@@ -37,3 +37,17 @@ logs/
 web/node_modules/
 web/dist/
 web/.vite/
+
+# Secrets
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+*.env
+*.env.local
+.env.*
+
+# macOS
+.DS_Store

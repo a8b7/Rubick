@@ -19,12 +19,13 @@ var (
 
 // InitKey 初始化加密密钥
 func InitKey() error {
+	var initErr error
 	once.Do(func() {
 		// 从环境变量获取密钥
 		key := os.Getenv("RUBICK_ENCRYPTION_KEY")
 		if key == "" {
-			// 使用默认密钥（生产环境应从安全配置中获取）
-			key = "rubick-default-encryption-key-32b"
+			initErr = errors.New("RUBICK_ENCRYPTION_KEY environment variable is required")
+			return
 		}
 
 		// 密钥必须是 16, 24 或 32 字节
@@ -38,7 +39,7 @@ func InitKey() error {
 		}
 	})
 
-	return keyErr
+	return initErr
 }
 
 // Encrypt 加密字符串
