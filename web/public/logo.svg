@@ -1,0 +1,56 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <!-- 背景渐变 -->
+                    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#1e63f5;stop-opacity:1"></stop>
+                        <stop offset="100%" style="stop-color:#0d5ee5;stop-opacity:1"></stop>
+                    </linearGradient>
+
+                    <!-- 立体阴影 -->
+                    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.15"></feDropShadow>
+                    </filter>
+
+                    <!-- 内部阴影 -->
+                    <linearGradient id="bodyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1"></stop>
+                        <stop offset="100%" style="stop-color:#f0f4f8;stop-opacity:1"></stop>
+                    </linearGradient>
+                </defs>
+
+                <!-- 背景圆形 -->
+                <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#bgGradient)" filter="url(#shadow)"></rect>
+
+                <!-- 鲸鱼主体 - 使用贝塞尔曲线绘制流畅形状 -->
+                <g transform="translate(256, 280)">
+                    <!-- 尾巴 - 两个圆 -->
+                    <circle cx="140" cy="-40" r="45" fill="url(#bodyGradient)"></circle>
+                    <circle cx="140" cy="40" r="45" fill="url(#bodyGradient)"></circle>
+
+                    <!-- 身体 - 流畅的椭圆形状 -->
+                    <ellipse cx="0" cy="10" rx="160" ry="95" fill="url(#bodyGradient)"></ellipse>
+
+                    <!-- 眼睛 -->
+                    <circle cx="-100" cy="-20" r="18" fill="#1e63f5"></circle>
+                    <circle cx="-96" cy="-24" r="6" fill="white" opacity="0.6"></circle>
+                </g>
+
+                <!-- 集装箱堆叠 - 带立体效果 -->
+                <g transform="translate(256, 165)">
+                    <!-- 底部3个集装箱 -->
+                    <g transform="translate(-75, 0)">
+                        <rect x="0" y="0" width="50" height="45" rx="4" fill="white" filter="url(#shadow)"></rect>
+                        <rect x="55" y="0" width="50" height="45" rx="4" fill="white" filter="url(#shadow)"></rect>
+                        <rect x="110" y="0" width="50" height="45" rx="4" fill="white" filter="url(#shadow)"></rect>
+                    </g>
+                    <!-- 顶部2个集装箱 -->
+                    <g transform="translate(-47, -50)">
+                        <rect x="0" y="0" width="50" height="45" rx="4" fill="white" filter="url(#shadow)"></rect>
+                        <rect x="55" y="0" width="50" height="45" rx="4" fill="white" filter="url(#shadow)"></rect>
+                    </g>
+                </g>
+
+                <!-- 高光细节 -->
+                <path d="M 100 100 Q 150 80 200 100" stroke="white" stroke-width="4" stroke-linecap="round" opacity="0.3" fill="none"></path>
+                <ellipse cx="180" cy="350" rx="80" ry="30" fill="white" opacity="0.1"></ellipse>
+            </svg>
