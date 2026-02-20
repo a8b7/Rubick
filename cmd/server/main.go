@@ -17,6 +17,7 @@ import (
 	"rubick/internal/handler"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 // Version 版本信息
@@ -26,6 +27,11 @@ var Version = "dev"
 var BuildTime = "unknown"
 
 func main() {
+	// 加载 .env 文件（如果存在）
+	if err := godotenv.Load(); err != nil {
+		log.Println("未找到 .env 文件，使用系统环境变量")
+	}
+
 	// 解析命令行参数
 	configPath := flag.String("config", "", "配置文件路径")
 	showVersion := flag.Bool("version", false, "显示版本信息")

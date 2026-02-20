@@ -45,9 +45,9 @@ web/.vite/
 *.p12
 *.pfx
 id_rsa*
-*.env
-*.env.local
-.env.*
+.env
+.env.local
+.env.*.local
 
 # macOS
 .DS_Store
