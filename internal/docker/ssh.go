@@ -3,7 +3,10 @@ package docker
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -29,6 +32,12 @@ func NewSSHConnection(config *ConnectionConfig) *SSHConnection {
 	return &SSHConnection{
 		config: config,
 	}
+}
+
+// dockerVersionResponse Docker 版本响应
+type dockerVersionResponse struct {
+	APIVersion    string `json:"ApiVersion"`
+	MinAPIVersion string `json:"MinAPIVersion"`
 }
 
 // Connect 建立连接
@@ -66,18 +75,29 @@ func (c *SSHConnection) Connect(ctx context.Context) (*client.Client, error) {
 	}
 	c.sshClient = sshClient
 
-	// 创建自定义 HTTP 客户端，通过 SSH 隧道连接
-	httpClient := &http.Client{
-		Transport: &sshTransport{
-			sshClient:  sshClient,
-			dockerPort: c.config.Port,
-		},
-		Timeout: 120 * time.Second,
+	// 创建临时 transport 用于版本协商
+	tempTransport := &sshTransport{
+		sshClient:  sshClient,
+		dockerPort: c.config.Port,
 	}
 
+	// 获取 Docker API 版本
+	apiVersion, err := c.negotiateAPIVersion(tempTransport)
+	if err != nil {
+		sshClient.Close()
+		return nil, fmt.Errorf("协商 API 版本失败: %w", err)
+	}
+
+	// 创建自定义 HTTP 客户端，通过 SSH 隧道连接
+	httpClient := &http.Client{
+		Transport: tempTransport,
+		Timeout:   120 * time.Second,
+	}
+
+	// 使用协商后的版本创建 client
 	cli, err := client.NewClientWithOpts(
 		client.WithHost("tcp://localhost"),
-		client.WithAPIVersionNegotiation(),
+		client.WithVersion(apiVersion),
 		client.WithHTTPClient(httpClient),
 	)
 	if err != nil {
@@ -87,6 +107,43 @@ func (c *SSHConnection) Connect(ctx context.Context) (*client.Client, error) {
 
 	c.client = cli
 	return c.client, nil
+}
+
+// negotiateAPIVersion 获取 Docker 服务器的 API 版本
+func (c *SSHConnection) negotiateAPIVersion(transport *sshTransport) (string, error) {
+	// 创建临时 HTTP client
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+
+	// 发送 /version 请求
+	req, err := http.NewRequest("GET", "http://localhost/version", nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("获取版本失败，状态码: %d", resp.StatusCode)
+	}
+
+	var versionInfo dockerVersionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
+		return "", fmt.Errorf("解析版本信息失败: %w", err)
+	}
+
+	// 如果获取不到版本，使用默认版本
+	if versionInfo.APIVersion == "" {
+		return "1.45", nil
+	}
+
+	return versionInfo.APIVersion, nil
 }
 
 // Close 关闭连接
@@ -145,6 +202,24 @@ type sshTransport struct {
 	dockerPort int
 }
 
+// sshConnReadCloser 包装 SSH 连接，确保 body 读取完成后关闭连接
+type sshConnReadCloser struct {
+	conn   net.Conn
+	reader io.Reader
+}
+
+func (r *sshConnReadCloser) Read(p []byte) (n int, err error) {
+	return r.reader.Read(p)
+}
+
+func (r *sshConnReadCloser) Close() error {
+	// 先关闭读取端，再关闭连接
+	if closer, ok := r.reader.(io.Closer); ok {
+		closer.Close()
+	}
+	return r.conn.Close()
+}
+
 // RoundTrip 实现 http.RoundTripper 接口
 func (t *sshTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// 通过 SSH 隧道建立 TCP 连接
@@ -153,10 +228,10 @@ func (t *sshTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("通过 SSH 隧道连接 Docker 失败: %w", err)
 	}
-	defer conn.Close()
 
 	// 发送 HTTP 请求
 	if err := req.Write(conn); err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("发送 HTTP 请求失败: %w", err)
 	}
 
@@ -164,7 +239,15 @@ func (t *sshTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, req)
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("读取 HTTP 响应失败: %w", err)
+	}
+
+	// 关键修复：包装 resp.Body，让它在关闭时同时关闭 SSH 连接
+	// 这样响应体读取完成后，连接才会被释放
+	resp.Body = &sshConnReadCloser{
+		conn:   conn,
+		reader: resp.Body,
 	}
 
 	return resp, nil

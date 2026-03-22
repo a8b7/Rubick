@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/docker/docker/client"
 )
@@ -31,15 +32,32 @@ func (c *TCPConnection) Connect(ctx context.Context) (*client.Client, error) {
 
 	hostURL := fmt.Sprintf("tcp://%s:%d", c.config.Host, c.config.Port)
 
-	opts := []client.Opt{
+	// 先创建临时 client 用于版本协商
+	tempOpts := []client.Opt{
 		client.WithHost(hostURL),
-		client.WithAPIVersionNegotiation(),
 	}
 
 	// TLS 配置
 	if !c.config.SkipTLSVerify {
-		// TODO: 加载 TLS 证书
-		// 使用 TLSCertID 从数据库加载证书
+		tempOpts = append(tempOpts, client.WithTLSClientConfigFromEnv())
+	}
+
+	tempCli, err := client.NewClientWithOpts(tempOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("创建临时 Docker 客户端失败: %w", err)
+	}
+
+	// 协商 API 版本
+	apiVersion := c.negotiateAPIVersion(tempCli)
+	tempCli.Close()
+
+	// 使用协商后的版本创建正式 client
+	opts := []client.Opt{
+		client.WithHost(hostURL),
+		client.WithVersion(apiVersion),
+	}
+
+	if !c.config.SkipTLSVerify {
 		opts = append(opts, client.WithTLSClientConfigFromEnv())
 	}
 
@@ -50,6 +68,26 @@ func (c *TCPConnection) Connect(ctx context.Context) (*client.Client, error) {
 
 	c.client = cli
 	return c.client, nil
+}
+
+// negotiateAPIVersion 获取 Docker 服务器的 API 版本
+func (c *TCPConnection) negotiateAPIVersion(cli *client.Client) string {
+	// 使用 client 的 Ping 方法获取版本
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ping, err := cli.Ping(ctx)
+	if err != nil {
+		// 如果 ping 失败，使用默认版本
+		return "1.45"
+	}
+
+	// 使用服务器返回的 API 版本
+	if ping.APIVersion != "" {
+		return ping.APIVersion
+	}
+
+	return "1.45"
 }
 
 // Close 关闭连接
@@ -68,11 +106,11 @@ func (c *TCPConnection) Type() ConnectionType {
 // Info 返回连接信息
 func (c *TCPConnection) Info() map[string]string {
 	return map[string]string{
-		"type":    "tcp",
-		"host":    c.config.Host,
-		"port":    fmt.Sprintf("%d", c.config.Port),
-		"tls":     fmt.Sprintf("%v", !c.config.SkipTLSVerify),
-		"desc":    "远程 TCP 连接",
+		"type":     "tcp",
+		"host":     c.config.Host,
+		"port":     fmt.Sprintf("%d", c.config.Port),
+		"tls":      fmt.Sprintf("%v", !c.config.SkipTLSVerify),
+		"desc":     "TCP+TLS 连接",
 	}
 }
 

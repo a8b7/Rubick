@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/docker/docker/client"
 )
@@ -23,13 +24,44 @@ func (c *LocalConnection) Connect(ctx context.Context) (*client.Client, error) {
 		return c.client, nil
 	}
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	// 先创建临时 client 用于版本协商
+	tempCli, err := client.NewClientWithOpts(client.FromEnv)
+	if err != nil {
+		return nil, fmt.Errorf("创建临时本地 Docker 客户端失败: %w", err)
+	}
+
+	// 协商 API 版本
+	apiVersion := c.negotiateAPIVersion(tempCli)
+	tempCli.Close()
+
+	// 使用协商后的版本创建正式 client
+	cli, err := client.NewClientWithOpts(
+		client.FromEnv,
+		client.WithVersion(apiVersion),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("创建本地 Docker 客户端失败: %w", err)
 	}
 
 	c.client = cli
 	return c.client, nil
+}
+
+// negotiateAPIVersion 获取 Docker 服务器的 API 版本
+func (c *LocalConnection) negotiateAPIVersion(cli *client.Client) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ping, err := cli.Ping(ctx)
+	if err != nil {
+		return "1.45"
+	}
+
+	if ping.APIVersion != "" {
+		return ping.APIVersion
+	}
+
+	return "1.45"
 }
 
 // Close 关闭连接
