@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"rubick/internal/model"
 )
@@ -33,8 +34,16 @@ func (m *ClientManager) GetClient(ctx context.Context, host *model.Host) (Connec
 	conn, exists := m.connections[host.ID]
 	m.mu.RUnlock()
 
+	// 如果连接存在，测试是否有效
 	if exists {
-		return conn, nil
+		if err := conn.Test(ctx); err == nil {
+			return conn, nil
+		}
+		// 连接失效，关闭并删除
+		m.mu.Lock()
+		conn.Close()
+		delete(m.connections, host.ID)
+		m.mu.Unlock()
 	}
 
 	// 创建新连接
@@ -43,12 +52,24 @@ func (m *ClientManager) GetClient(ctx context.Context, host *model.Host) (Connec
 
 	// 双重检查
 	if conn, exists = m.connections[host.ID]; exists {
-		return conn, nil
+		if err := conn.Test(ctx); err == nil {
+			return conn, nil
+		}
+		conn.Close()
+		delete(m.connections, host.ID)
 	}
 
 	conn, err := m.createConnection(host)
 	if err != nil {
 		return nil, err
+	}
+
+	// 测试新连接
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := conn.Test(ctx); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("连接测试失败: %w", err)
 	}
 
 	m.connections[host.ID] = conn
