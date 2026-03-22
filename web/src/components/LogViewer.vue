@@ -12,7 +12,9 @@
         >
           {{ connectionStatusText }}
         </span>
-        <span v-if="lineCount > 0" class="text-xs text-base-content/60">{{ lineCount }} 行</span>
+        <span v-if="lineCount > 0" class="text-xs text-base-content/60">
+          {{ lineCount }}/{{ maxLines }} 行
+        </span>
       </div>
       <div class="log-actions flex items-center gap-2">
         <div class="join">
@@ -30,10 +32,10 @@
             <Icon icon="mdi:delete" class="text-lg" />
           </button>
         </div>
-        <select v-model="tailLines" class="select select-sm select-bordered w-24" @change="reconnect">
-          <option value="100">100行</option>
-          <option value="500">500行</option>
-          <option value="1000">1000行</option>
+        <select v-model="tailLines" class="select select-sm select-bordered w-28" @change="reconnect">
+          <option value="100">最新100行</option>
+          <option value="500">最新500行</option>
+          <option value="1000">最新1000行</option>
           <option value="all">全部</option>
         </select>
       </div>
@@ -67,6 +69,7 @@ interface LogLine {
 const props = defineProps<{
   wsUrl: string
   autoScroll?: boolean
+  maxLines?: number
 }>()
 
 const emit = defineEmits<{
@@ -79,6 +82,13 @@ const paused = ref(false)
 const autoScroll = ref(props.autoScroll ?? true)
 const connectionStatus = ref<'disconnected' | 'connecting' | 'connected'>('disconnected')
 const tailLines = ref('100')
+const maxLines = computed(() => {
+  // 根据 tailLines 设置最大行数，防止内存溢出
+  if (tailLines.value === 'all') {
+    return props.maxLines ?? 5000 // 全部模式下默认最大5000行
+  }
+  return Math.max(parseInt(tailLines.value) * 2, 200) // 至少保留 tail 行数的2倍
+})
 const lineCount = computed(() => logs.value.length)
 
 let ws: WebSocket | null = null
@@ -102,8 +112,13 @@ function connect() {
   connectionStatus.value = 'connecting'
   emit('status-change', 'connecting')
 
+  // 构建 WebSocket URL，添加 tail 参数
+  let wsUrl = props.wsUrl
+  const separator = wsUrl.includes('?') ? '&' : '?'
+  wsUrl = `${wsUrl}${separator}tail=${tailLines.value}`
+
   try {
-    ws = new WebSocket(props.wsUrl)
+    ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
       connectionStatus.value = 'connected'
@@ -129,6 +144,7 @@ function connect() {
             pendingLogs.push(logLine)
           } else {
             logs.value.push(logLine)
+            trimLogs()
             if (autoScroll.value) {
               nextTick(() => scrollToBottom())
             }
@@ -151,6 +167,7 @@ function connect() {
             content: event.data,
             type: 'stdout'
           })
+          trimLogs()
           if (autoScroll.value) {
             nextTick(() => scrollToBottom())
           }
@@ -203,6 +220,7 @@ function togglePause() {
   paused.value = !paused.value
   if (!paused.value && pendingLogs.length > 0) {
     logs.value.push(...pendingLogs)
+    trimLogs()
     pendingLogs = []
     if (autoScroll.value) {
       nextTick(() => scrollToBottom())
@@ -226,6 +244,14 @@ function scrollToBottom() {
 function clearLogs() {
   logs.value = []
   pendingLogs = []
+}
+
+// 修剪日志，保持在最大行数限制内
+function trimLogs() {
+  if (logs.value.length > maxLines.value) {
+    // 删除旧的日志行，保留最新的
+    logs.value = logs.value.slice(-maxLines.value)
+  }
 }
 
 // Watch for URL changes

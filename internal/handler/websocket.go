@@ -72,6 +72,9 @@ func ContainerLogsWS(c *gin.Context) {
 		return
 	}
 
+	// 获取 tail 参数，默认 100 行
+	tail := c.DefaultQuery("tail", "100")
+
 	// 获取容器日志流
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -80,7 +83,7 @@ func ContainerLogsWS(c *gin.Context) {
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
-		Tail:       "100",
+		Tail:       tail,
 		Timestamps: false,
 	})
 	if err != nil {
@@ -150,12 +153,15 @@ func ComposeLogsWS(c *gin.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// 获取 tail 参数，默认 100 行
+	tail := c.DefaultQuery("tail", "100")
+
 	stream, err := composeService.Logs(ctx, project.Content, docker.LogsOptions{
 		ComposeOptions: docker.ComposeOptions{
 			ProjectName: project.Name,
 		},
 		Follow: true,
-		Tail:   "100",
+		Tail:   tail,
 	})
 	if err != nil {
 		sendWSError(conn, "获取日志失败")

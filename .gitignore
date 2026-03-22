@@ -1,5 +1,6 @@
 # Binaries
 bin/
+rubick_server
 *.exe
 *.exe~
 *.dll
@@ -51,3 +52,4 @@ id_rsa*
 
 # macOS
 .DS_Store
+.alma-snapshots
